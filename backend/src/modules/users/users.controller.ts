@@ -19,6 +19,15 @@ export class UsersController {
     return this.usersService.findById(user.id);
   }
 
+  @Get('search/:email')
+  @ApiOperation({ summary: 'Search user by email' })
+  async searchByEmail(@Param('email') email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return null;
+    const { password, ...safeUser } = user;
+    return safeUser;
+  }
+
   @Put('me')
   @ApiOperation({ summary: 'Update current user profile' })
   async updateProfile(@CurrentUser() user: User, @Body() updateDto: UpdateUserDto) {

@@ -8,4 +8,14 @@ export class UpdateDocumentDto extends PartialType(CreateDocumentDto) {
   @IsBoolean()
   @IsOptional()
   isArchived?: boolean;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  isDeleted?: boolean;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  isStarred?: boolean;
 }

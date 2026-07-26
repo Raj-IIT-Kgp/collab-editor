@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { EditorGateway } from '../../websocket/websocket.gateway';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly editorGateway: EditorGateway,
+  ) {}
 
   async getUserNotifications(userId: string) {
     return this.prisma.notification.findMany({
@@ -29,7 +33,7 @@ export class NotificationsService {
 
   // Internal method to trigger notifications
   async createNotification(userId: string, type: string, content: string, link?: string) {
-    return this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         userId,
         type,
@@ -37,5 +41,8 @@ export class NotificationsService {
         link,
       },
     });
+    
+    this.editorGateway.sendNotificationToUser(userId, notification);
+    return notification;
   }
 }

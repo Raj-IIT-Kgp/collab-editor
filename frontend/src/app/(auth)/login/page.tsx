@@ -32,9 +32,9 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const { data } = await api.post('/auth/login', values);
-      setAuth(data.user, data.accessToken);
+      setAuth(data.data.user, data.data.accessToken);
       toast.success("Successfully logged in");
-      router.push('/');
+      router.push('/dashboard');
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Login failed");
     } finally {

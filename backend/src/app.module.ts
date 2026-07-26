@@ -16,6 +16,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { VersionHistoryModule } from './modules/version-history/version-history.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { redisStore } from 'cache-manager-redis-yet';
 
 @Module({
   imports: [
@@ -23,6 +27,19 @@ import { ActivityModule } from './modules/activity/activity.module';
       isGlobal: true,
       validate: (env) => envValidationSchema.parse(env),
     }),
+    CacheModule.registerAsync({
+      isGlobal: true,
+      useFactory: async () => ({
+        store: await redisStore({
+          url: process.env.REDIS_URL || 'redis://localhost:6379',
+          ttl: 60000, // 1 minute default
+        }),
+      }),
+    }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100, // 100 requests per minute
+    }]),
     DatabaseModule,
     UsersModule,
     AuthModule,
@@ -40,6 +57,11 @@ import { ActivityModule } from './modules/activity/activity.module';
     ActivityModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    }
+  ],
 })
 export class AppModule {}

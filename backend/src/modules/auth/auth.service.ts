@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { MailService } from '../../mail/mail.service';
 import { PrismaService } from '../../common/database/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,7 +26,7 @@ export class AuthService {
     const verificationToken = uuidv4();
     await this.mailService.sendVerificationEmail(user.email, verificationToken);
 
-    return this.generateTokens(user.id);
+    return this.generateTokens(user);
   }
 
   async login(loginDto: LoginDto) {
@@ -40,7 +40,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.generateTokens(user.id);
+    return this.generateTokens(user);
   }
 
   async googleLogin(req: any) {
@@ -59,7 +59,7 @@ export class AuthService {
       });
     }
 
-    return this.generateTokens(user.id);
+    return this.generateTokens(user);
   }
 
   async refreshTokens(userId: string, refreshToken: string) {
@@ -72,7 +72,8 @@ export class AuthService {
     }
 
     await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
-    return this.generateTokens(userId);
+    const user = await this.usersService.findById(userId);
+    return this.generateTokens(user);
   }
 
   async logout(userId: string, refreshToken: string) {
@@ -82,7 +83,8 @@ export class AuthService {
     return { success: true };
   }
 
-  private async generateTokens(userId: string) {
+  private async generateTokens(user: any) {
+    const userId = user.id;
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
         { sub: userId },
@@ -110,7 +112,10 @@ export class AuthService {
       },
     });
 
+    const { password, ...safeUser } = user;
+
     return {
+      user: safeUser,
       accessToken,
       refreshToken,
     };

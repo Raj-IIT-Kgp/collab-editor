@@ -94,6 +94,8 @@ model Document {
   workspaceId String
   ownerId     String
   isArchived  Boolean    @default(false)
+  isDeleted   Boolean    @default(false)
+  isStarred   Boolean    @default(false)
   isPublic    Boolean    @default(false)
   publicRole  Role       @default(VIEWER)
   createdAt   DateTime   @default(now())

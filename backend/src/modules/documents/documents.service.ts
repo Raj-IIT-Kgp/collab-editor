@@ -1,11 +1,16 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class DocumentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
+  ) {}
 
   async create(userId: string, createDocumentDto: CreateDocumentDto) {
     await this.verifyWorkspaceAccess(createDocumentDto.workspaceId, userId);
@@ -17,19 +22,51 @@ export class DocumentsService {
       }
     }
 
-    return this.prisma.document.create({
+    const newDocument = await this.prisma.document.create({
       data: {
         ...createDocumentDto,
         ownerId: userId,
       },
     });
+
+    const cacheKey = `documents_workspace_${createDocumentDto.workspaceId}_user_${userId}`;
+    await this.cacheManager.del(cacheKey);
+
+    return newDocument;
   }
 
   async findAllInWorkspace(workspaceId: string, userId: string) {
     await this.verifyWorkspaceAccess(workspaceId, userId);
 
+    const cacheKey = `documents_workspace_${workspaceId}_user_${userId}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    if (cached) return cached;
+
+    const documents = await this.prisma.document.findMany({
+      where: { workspaceId, isArchived: false, isDeleted: false },
+      include: { owner: { select: { id: true, name: true, avatarUrl: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    await this.cacheManager.set(cacheKey, documents, 30000); // 30 seconds
+    return documents;
+  }
+
+  async findTrashInWorkspace(workspaceId: string, userId: string) {
+    await this.verifyWorkspaceAccess(workspaceId, userId);
+
     return this.prisma.document.findMany({
-      where: { workspaceId, isArchived: false },
+      where: { workspaceId, isDeleted: true },
+      include: { owner: { select: { id: true, name: true, avatarUrl: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async findStarredInWorkspace(workspaceId: string, userId: string) {
+    await this.verifyWorkspaceAccess(workspaceId, userId);
+
+    return this.prisma.document.findMany({
+      where: { workspaceId, isStarred: true, isDeleted: false },
       include: { owner: { select: { id: true, name: true, avatarUrl: true } } },
       orderBy: { updatedAt: 'desc' },
     });
@@ -58,16 +95,21 @@ export class DocumentsService {
       }
     }
 
-    return this.prisma.document.update({
+    const updatedDocument = await this.prisma.document.update({
       where: { id },
       data: updateDocumentDto,
     });
+
+    const cacheKey = `documents_workspace_${document.workspaceId}_user_${userId}`;
+    await this.cacheManager.del(cacheKey);
+
+    return updatedDocument;
   }
 
   async duplicate(id: string, userId: string) {
     const document = await this.findOne(id, userId);
 
-    return this.prisma.document.create({
+    const duplicatedDocument = await this.prisma.document.create({
       data: {
         title: `${document.title} (Copy)`,
         content: document.content, // Copy CRDT binary state
@@ -78,6 +120,11 @@ export class DocumentsService {
         publicRole: document.publicRole,
       },
     });
+
+    const cacheKey = `documents_workspace_${document.workspaceId}_user_${userId}`;
+    await this.cacheManager.del(cacheKey);
+
+    return duplicatedDocument;
   }
 
   async remove(id: string, userId: string) {
@@ -85,7 +132,12 @@ export class DocumentsService {
     if (document.ownerId !== userId) {
       throw new ForbiddenException('Only the owner can permanently delete the document');
     }
-    return this.prisma.document.delete({ where: { id } });
+    const deletedDocument = await this.prisma.document.delete({ where: { id } });
+
+    const cacheKey = `documents_workspace_${document.workspaceId}_user_${userId}`;
+    await this.cacheManager.del(cacheKey);
+
+    return deletedDocument;
   }
 
   private async verifyWorkspaceAccess(workspaceId: string, userId: string) {

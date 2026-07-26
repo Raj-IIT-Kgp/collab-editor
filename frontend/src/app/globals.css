@@ -128,3 +128,39 @@
     @apply font-sans;
   }
 }
+
+/* Yjs Collaborative Cursors */
+.yRemoteSelection {
+  background-color: rgba(255, 200, 200, 0.5);
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid #ff4b4b;
+  border-top: 2px solid #ff4b4b;
+  border-bottom: 2px solid #ff4b4b;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: attr(data-client-name);
+  top: -1.5em;
+  left: -2px;
+  background-color: #ff4b4b;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.yRemoteSelectionHead:hover::after {
+  opacity: 1;
+}

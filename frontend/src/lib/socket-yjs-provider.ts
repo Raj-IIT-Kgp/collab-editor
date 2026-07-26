@@ -23,8 +23,12 @@ export class SocketIOProvider extends Observable<string> {
     this.socket.on('sync-update', this.onRemoteUpdate);
     this.socket.on('awareness-update', this.onRemoteAwarenessUpdate);
 
-    // Initial join
-    this.socket.emit('join-document', documentId);
+  }
+
+  connect() {
+    this.socket.emit('join-document', this.documentId);
+    this.emit('status', [{ status: 'connected' }]);
+    this.emit('sync', [true]);
   }
 
   private onUpdate = (update: Uint8Array, origin: any) => {

@@ -6,5 +6,6 @@ import { JwtModule } from '@nestjs/jwt';
 @Module({
   imports: [CollaborationModule, JwtModule.register({})],
   providers: [EditorGateway],
+  exports: [EditorGateway],
 })
 export class WebsocketModule {}

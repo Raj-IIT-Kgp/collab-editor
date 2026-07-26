@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAuthStore } from '../store/auth.store';
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1',
   withCredentials: true,
 });
 
@@ -22,7 +22,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       try {
         const { data } = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/auth/refresh`,
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1'}/auth/refresh`,
           {},
           { withCredentials: true }
         );

@@ -42,6 +42,7 @@ export class EditorGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret: this.configService.get('JWT_SECRET'),
       });
       client.data.user = payload;
+      client.join(`user_${payload.sub}`);
       this.logger.log(`Client connected: ${client.id} (User: ${payload.sub})`);
     } catch (e) {
       this.logger.error(`Connection failed: ${e.message}`);
@@ -102,5 +103,10 @@ export class EditorGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleAwarenessUpdate(@ConnectedSocket() client: Socket, @MessageBody() data: { documentId: string, update: Buffer }) {
     const { documentId, update } = data;
     client.to(documentId).emit('awareness-update', update);
+  }
+
+  // A method for other services to inject the gateway and send notifications
+  sendNotificationToUser(userId: string, notification: any) {
+    this.server.to(`user_${userId}`).emit('new-notification', notification);
   }
 }

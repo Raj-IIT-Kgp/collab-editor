@@ -1,13 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, Inject } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { Role } from '@prisma/client';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class WorkspaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
+  ) {}
 
   async create(userId: string, createWorkspaceDto: CreateWorkspaceDto) {
     return this.prisma.workspace.create({
@@ -27,7 +32,11 @@ export class WorkspaceService {
   }
 
   async findAllForUser(userId: string) {
-    return this.prisma.workspace.findMany({
+    const cacheKey = `workspaces_${userId}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    if (cached) return cached;
+
+    const workspaces = await this.prisma.workspace.findMany({
       where: {
         members: {
           some: { userId },
@@ -41,6 +50,9 @@ export class WorkspaceService {
         },
       },
     });
+
+    await this.cacheManager.set(cacheKey, workspaces, 60000); // cache for 60s
+    return workspaces;
   }
 
   async findOne(id: string, userId: string) {

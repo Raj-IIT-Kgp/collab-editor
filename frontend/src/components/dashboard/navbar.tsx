@@ -11,11 +11,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Bell, Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import NotificationDropdown from './NotificationDropdown';
+import SearchModal from './SearchModal';
+import { useParams } from 'next/navigation';
 
 export default function Navbar() {
   const { user, logout } = useAuthStore();
+  const params = useParams();
+  const workspaceId = params?.workspaceId as string;
 
   const handleLogout = () => {
     logout();
@@ -25,19 +28,13 @@ export default function Navbar() {
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-white px-6">
       <div className="flex flex-1 items-center gap-4">
-        <form className="relative flex-1 md:grow-0">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-          <Input
-            type="search"
-            placeholder="Search documents..."
-            className="w-full rounded-lg bg-gray-50 pl-8 md:w-[300px] lg:w-[400px]"
-          />
-        </form>
+        {workspaceId ? (
+          <SearchModal workspaceId={workspaceId} />
+        ) : (
+          <div className="flex-1" />
+        )}
       </div>
-      <Button variant="ghost" size="icon" className="rounded-full">
-        <Bell className="h-5 w-5 text-gray-600" />
-        <span className="sr-only">Toggle notifications</span>
-      </Button>
+      <NotificationDropdown />
       <DropdownMenu>
         <DropdownMenuTrigger className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'rounded-full' })}>
           <Avatar className="h-8 w-8">

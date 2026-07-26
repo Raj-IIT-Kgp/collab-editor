@@ -26,6 +26,18 @@ export class DocumentsController {
     return this.documentsService.findAllInWorkspace(workspaceId, user.id);
   }
 
+  @Get('workspace/:workspaceId/trash')
+  @ApiOperation({ summary: 'Get all trashed documents in a workspace' })
+  findTrashInWorkspace(@Param('workspaceId') workspaceId: string, @CurrentUser() user: User) {
+    return this.documentsService.findTrashInWorkspace(workspaceId, user.id);
+  }
+
+  @Get('workspace/:workspaceId/starred')
+  @ApiOperation({ summary: 'Get all starred documents in a workspace' })
+  findStarredInWorkspace(@Param('workspaceId') workspaceId: string, @CurrentUser() user: User) {
+    return this.documentsService.findStarredInWorkspace(workspaceId, user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get document by ID' })
   findOne(@Param('id') id: string, @CurrentUser() user: User) {

@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../../common/database/prisma.service';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { Role } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PermissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async updateDocumentPermission(
     documentId: string,
@@ -38,7 +42,7 @@ export class PermissionsService {
       }).catch(() => null);
     }
 
-    return this.prisma.permission.upsert({
+    const res = await this.prisma.permission.upsert({
       where: {
         documentId_userId: { documentId, userId: targetUserId },
       },
@@ -51,6 +55,18 @@ export class PermissionsService {
         role: updatePermissionDto.role,
       },
     });
+    
+    // Notification dispatch
+    if (updatePermissionDto.role !== null) {
+      this.notificationsService.createNotification(
+        targetUserId,
+        'SHARE',
+        `A document "${document.title}" was shared with you`,
+        `/document/${documentId}`
+      );
+    }
+    
+    return res;
   }
 
   async getDocumentPermissions(documentId: string, userId: string) {
