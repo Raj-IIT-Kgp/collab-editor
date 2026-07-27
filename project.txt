@@ -1,0 +1,354 @@
+================================================================================
+                        COSCRIBE — COLLABORATIVE EDITOR
+                   Complete Project Documentation
+================================================================================
+
+PROJECT OVERVIEW
+----------------
+CoScribe is a production-grade, real-time collaborative document editor. It allows 
+teams to create isolated workspaces, organize documents into folders, and collaboratively 
+edit rich-text documents in real-time. The application features live cursors, typing 
+indicators, selection highlighting, comment threading, and real-time notifications.
+
+Repository layout:
+  /backend    — NestJS REST API and WebSocket Gateway
+  /frontend   — Next.js web application
+
+FEATURE SET
+-----------
+  1. Real-Time Editor           — Yjs CRDTs + Lexical framework for seamless live typing
+  2. Workspaces                 — Create multiple isolated workspaces with role-based access
+  3. Document Organization      — Folder hierarchies, Starred documents, and Trash bin
+  4. Rich Media Uploads         — Insert images directly into documents via AWS S3
+  5. Sharing & Permissions      — Viewer/Editor/Admin roles and Public link sharing toggles
+  6. Comments & Threading       — Highlight text to leave contextual comments and nested replies
+  7. Real-Time Notifications    — Socket.IO dispatched alerts (e.g., when a document is shared)
+  8. Command-K Global Search    — Instant, debounced search across document titles
+  9. Soft Deletes               — Documents toggle `isDeleted` for instant restore from Trash
+ 10. Version History            — Snapshots of CRDT document state stored for history restoration
+ 11. Caching & Performance      — Redis caching for heavy database queries (e.g., workspace lists)
+ 12. Activity Logging           — Audit trails tracking CREATE/UPDATE/DELETE/SHARE actions
+
+AUTH SECURITY FEATURES
+----------------------
+ 13. JWT Authentication         — @nestjs/jwt issues access/refresh tokens for stateless auth
+ 14. Socket Handshake Auth      — WebSocket connections intercept JWTs to reject unauthorized users
+ 15. Password Hashing           — User passwords securely hashed using bcrypt before DB storage
+ 16. Granular ACLs              — Permissions service dynamically checks DB tables for read/write access
+
+
+================================================================================
+TECH STACK
+================================================================================
+
+BACKEND
+-------
+  Runtime         Node.js
+  Language        TypeScript
+  Framework       NestJS            — Modular, decorator-driven Node.js framework
+  ORM             Prisma            — Type-safe database client + migrations
+  Database        PostgreSQL        — Primary relational data store
+  Cache           Redis             — Query caching via @nestjs/cache-manager
+  WebSockets      Socket.IO         — Real-time event broadcasting
+  CRDT Sync       y-websocket       — Handles Yjs binary update arrays across clients
+  Validation      class-validator + class-transformer
+  Auth            @nestjs/jwt + @nestjs/passport
+  Storage         AWS S3            — Pre-signed URLs via @aws-sdk/s3-request-presigner
+  Password        bcrypt            — Password hashing
+
+FRONTEND
+--------
+  Framework       Next.js 15 (App Router)
+  Language        TypeScript
+  UI Library      React 19
+  Editor Engine   Lexical (Meta)    — Highly extensible text editor framework
+  CRDT Binding    @lexical/yjs      — Translates Lexical state to Yjs mathematical operations
+  Styling         Tailwind CSS      — Utility-first CSS framework
+  State           Zustand           — Global state stores (e.g., useAuthStore)
+  HTTP Client     Axios             — Configured with interceptors for JWT injection
+  UI Components   Shadcn UI         — Radix UI primitives with Tailwind styling
+
+
+================================================================================
+BACKEND — ARCHITECTURE
+================================================================================
+
+ENTRY POINT: src/main.ts
+--------------------------
+The bootstrap function creates the NestJS application, configures CORS, applies global 
+ValidationPipes for request sanitization, and sets up Swagger UI for API documentation.
+
+MODULE TREE
+-----------
+  AppModule
+  ├── AuthModule                — JWT register/login and token issuance
+  ├── UsersModule               — User profile management
+  ├── WorkspaceModule           — Workspace creation and membership
+  ├── FoldersModule             — Directory hierarchies
+  ├── DocumentsModule           — Core document CRUD and soft deletes
+  ├── CollaborationModule       — Yjs document state management
+  ├── EditorModule              — Socket.IO gateway (`EditorGateway`)
+  ├── CommentsModule            — Document commenting and threading
+  ├── VersionHistoryModule      — CRDT state snapshots
+  ├── NotificationsModule       — Real-time user alerts
+  ├── PermissionsModule         — Document-level ACLs
+  ├── SearchModule              — Global Cmd+K search
+  ├── UploadsModule             — AWS S3 presigned URL generation
+  └── ActivityModule            — Audit logging
+
+DATABASE SCHEMA (prisma/schema.prisma)
+---------------------------------------
+  model User {
+    id               String     @id @default(uuid())
+    email            String     @unique
+    password         String?
+    workspaces       WorkspaceMember[]
+    documents        Document[] @relation("DocumentOwner")
+    // ...relations to comments, replies, notifications, activityLogs
+  }
+
+  model Workspace {
+    id               String     @id @default(uuid())
+    name             String
+    members          WorkspaceMember[]
+    folders          Folder[]
+    documents        Document[]
+  }
+
+  model WorkspaceMember {
+    id               String     @id @default(uuid())
+    workspaceId      String
+    userId           String
+    role             Role       @default(VIEWER) // OWNER, ADMIN, VIEWER
+  }
+
+  model Folder {
+    id               String     @id @default(uuid())
+    parentId         String?
+    children         Folder[]   @relation("FolderHierarchy")
+    // ...
+  }
+
+  model Document {
+    id               String     @id @default(uuid())
+    title            String
+    content          Bytes?     // Store Yjs binary updates
+    isDeleted        Boolean    @default(false)
+    isStarred        Boolean    @default(false)
+    isPublic         Boolean    @default(false)
+    publicRole       Role       @default(VIEWER)
+    // ...relations to owner, folder, workspace, permissions, comments
+  }
+
+  model DocumentVersion {
+    id               String     @id @default(uuid())
+    documentId       String
+    snapshot         Bytes      // Binary representation of CRDT state at this point
+  }
+
+  model Permission {
+    id               String     @id @default(uuid())
+    documentId       String
+    userId           String
+    role             Role
+  }
+
+  model Comment {
+    id               String     @id @default(uuid())
+    documentId       String
+    content          String
+    position         Json?      // Spatial info mapping back to Lexical node
+    replies          Reply[]
+  }
+
+
+================================================================================
+BACKEND — MODULES IN DETAIL
+================================================================================
+
+── AUTH MODULE ─────────────────────────────────────────────────────────────────
+
+  AuthService & AuthController
+    - Handles `/login` and `/register`.
+    - Generates JWT `access_token` and `refresh_token` using `@nestjs/jwt`.
+    - Utilizes `bcrypt` for secure password hashing.
+    - Applies `JwtAuthGuard` globally to secure all protected API routes.
+
+── WORKSPACE & DOCUMENTS MODULES ───────────────────────────────────────────────
+
+  WorkspaceService
+    - Creates workspaces and assigns `WorkspaceMember` roles (OWNER, ADMIN, VIEWER).
+    - Wraps heavy queries with `@nestjs/cache-manager` to cache results in Redis.
+
+  DocumentsService
+    - Handles Document CRUD operations.
+    - Implements "Soft Deletes" by toggling `isDeleted` or `isStarred` boolean flags.
+    - Access Control List (ACL) dynamically checks Workspace admin status, specific 
+      document `Permission` overrides, or `isPublic` flags before granting write access.
+
+── REAL-TIME EDITOR (WEBSOCKETS) ───────────────────────────────────────────────
+
+  EditorGateway (Socket.IO)
+    - Listens on the `/editor` namespace.
+    - Intercepts HTTP JWTs during the Socket handshake for security.
+    - Uses the `y-websocket` protocol to blindly forward binary CRDT (Yjs) update arrays 
+      from one client to all other clients connected to the same Document Room.
+
+── IMAGE UPLOAD SYSTEM ─────────────────────────────────────────────────────────
+
+  UploadsController
+    - Securely communicates with AWS S3 using `@aws-sdk/s3-request-presigner`.
+    - Returns a temporary, secure upload URL directly to the frontend, preventing the 
+      Node server from bottlenecking on heavy 5MB image payloads.
+
+── COMMENTS & THREADING ────────────────────────────────────────────────────────
+
+  CommentsService
+    - Stores comment text, author ID, and an optional `position` JSON object to map 
+      the comment back to the exact Lexical node in the editor.
+
+── NOTIFICATIONS & SEARCH ──────────────────────────────────────────────────────
+
+  NotificationsService
+    - Writes Notification records to Postgres.
+    - Uses Dependency Injection to call `EditorGateway` and emit a `new-notification` 
+      event directly to a private Socket room (`user_{userId}`).
+
+  SearchController
+    - Exposes a GET `?q=` endpoint.
+    - Uses Prisma `contains` operator with `mode: 'insensitive'` for fast pattern-matching.
+
+
+================================================================================
+FRONTEND — ARCHITECTURE
+================================================================================
+
+Framework: Next.js 15 App Router
+
+CORE CONCEPTS
+-------------
+
+  1. Global State (Zustand):
+     `useAuthStore` manages the active user session and JWTs.
+
+  2. API Interceptors (Axios):
+     `api.ts` configures an Axios instance to automatically attach the Bearer token 
+     to every outgoing request.
+
+  3. Lexical Integration:
+     The editor is built with `LexicalComposer`.
+     A custom `CollaborationPlugin` binds the Yjs document to the local Socket.IO client, 
+     broadcasting updates at 60fps.
+     Custom nodes like `ImageNode` (for rendering S3 URLs) and `MarkNode` (for highlighting 
+     comment text in yellow) extend the core rich-text capabilities.
+
+COMPONENTS
+----------
+
+  Sidebar / Navigation
+    - Dynamically renders the active workspace's hierarchy (Folders, Documents).
+    - Provides tabs for standard documents, Starred documents, and Trash bin.
+
+  SearchModal
+    - Binds `keydown` listener for `Meta+K`.
+    - Implements a 300ms debounce function to prevent API spamming during typing.
+
+  ShareModal
+    - Built with Shadcn UI. 
+    - Allows owners to search users by email and add them with granular permissions.
+    - Toggles Public Sharing, instantly updating the backend database.
+
+  CommentsSidebar
+    - Sits alongside the Lexical editor.
+    - Clicking a `MarkNode` in the text scrolls the sidebar to the relevant comment thread.
+
+  NotificationDropdown
+    - Maintains a background Socket.IO connection.
+    - Listens for `new-notification` events to increment unread counters instantly.
+
+
+================================================================================
+DATA FLOW — END TO END
+================================================================================
+
+COLLABORATIVE EDITING FLOW
+--------------------------
+  User A types in Lexical Editor 
+    → `@lexical/yjs` computes mathematical CRDT operation 
+    → `CollaborationPlugin` broadcasts binary update via Socket.IO
+    → `EditorGateway` (Backend) receives update 
+    → Forwards update to User B's Socket connection 
+    → User B's `@lexical/yjs` applies CRDT operation
+    → User B's Lexical Editor updates UI seamlessly without conflict.
+
+IMAGE UPLOAD FLOW
+-----------------
+  User drops image into editor
+    → `ImagePlugin` requests presigned URL from `UploadsController`
+    → Backend signs AWS S3 URL and returns it
+    → Frontend PUTs file directly to S3 URL
+    → Frontend dispatches `INSERT_IMAGE_COMMAND` with the final S3 URL to Lexical.
+
+
+================================================================================
+SECURITY CONSIDERATIONS
+================================================================================
+
+  1. JWT Auth everywhere — HTTP endpoints secured via `JwtAuthGuard`; WebSockets 
+     secured during handshake.
+  2. Presigned S3 URLs — Prevents unauthorized bucket access and removes payload 
+     strain from the Node.js API.
+  3. Strict ACLs — `DocumentsService` verifies Workspace roles and Document-specific 
+     overrides before allowing mutations or reads.
+  4. Password Hashing — bcrypt ensures no plaintext passwords are ever stored.
+
+
+================================================================================
+DOCKER & PRODUCTION DEPLOYMENT
+================================================================================
+
+  docker-compose.yml       — Local development (starts Postgres and Redis).
+  docker-compose.prod.yml  — Production deployment (starts entire stack).
+
+DEPLOYMENT FLOW
+---------------
+  1. Environment Configuration: 
+     Create `.env` in `backend` (needs DATABASE_URL, JWT_SECRET, REDIS_URL, AWS_S3_*) 
+     and `frontend` (needs NEXT_PUBLIC_API_URL, NEXT_PUBLIC_WS_URL).
+  2. Build & Run:
+     `docker compose -f docker-compose.prod.yml up -d --build`
+     Spins up Postgres, Redis, builds NestJS backend (runs migrations), builds 
+     Next.js frontend, and connects them via isolated networks.
+  3. Reverse Proxy:
+     Recommended to set up NGINX or Cloudflare for SSL termination pointing to 
+     ports 3000 (Frontend) and 3001 (Backend API & WebSockets).
+
+
+================================================================================
+PROJECT FILE REFERENCE
+================================================================================
+
+Root Files:
+  docker-compose.yml              — Local services orchestration
+  docker-compose.prod.yml         — Production services orchestration
+  PROJECT_FEATURES_BREAKDOWN.md   — Original feature documentation
+  README.md                       — Setup instructions
+
+Backend:
+  backend/src/main.ts             — NestJS Bootstrap
+  backend/src/app.module.ts       — Root module configuration
+  backend/prisma/schema.prisma    — PostgreSQL Schema definitions
+  backend/src/modules/            — Domain-specific feature modules (Auth, Workspace, etc.)
+  backend/src/websocket/          — Socket.IO gateway implementations
+  backend/src/cache/              — Redis cache service configuration
+  backend/src/common/             — Shared guards (JwtAuthGuard), interceptors
+  backend/src/mail/ & jobs/       — Background tasks
+
+Frontend:
+  frontend/src/app/               — Next.js App Router pages (/, /login, /register, etc.)
+  frontend/src/components/        — UI Components (Shadcn, custom Modals)
+  frontend/src/components/editor/ — Lexical editor setup and custom plugins (CommentPlugin, etc.)
+  frontend/src/lib/               — Axios instance (api.ts) and utilities
+  frontend/src/store/             — Zustand global state
+  frontend/src/providers/         — React context providers (Auth, Theme)
+================================================================================
